@@ -2,11 +2,22 @@
 set -euo pipefail
 
 SOCKET="/tmp/claude-hook.sock"
+EVENT_TYPE="${1:-PermissionRequest}"
 INPUT=$(cat)
 
 [ ! -S "$SOCKET" ] && exit 0
 
-RESPONSE=$(python3 -c "
+# Inject event type into JSON
+ENRICHED=$(python3 -c "
+import json, sys
+data = json.loads(sys.stdin.read())
+data['hook_event_type'] = '$EVENT_TYPE'
+print(json.dumps(data))
+" <<< "$INPUT" 2>/dev/null) || exit 0
+
+if [ "$EVENT_TYPE" = "PermissionRequest" ]; then
+    # Send and wait for response
+    RESPONSE=$(python3 -c "
 import socket, sys
 
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -28,7 +39,24 @@ while True:
 
 sock.close()
 sys.stdout.buffer.write(response)
-" <<< "$INPUT" 2>/dev/null)
+" <<< "$ENRICHED" 2>/dev/null)
 
-[ -n "$RESPONSE" ] && echo "$RESPONSE"
+    [ -n "$RESPONSE" ] && echo "$RESPONSE"
+else
+    # Fire and forget for Notification/Stop
+    python3 -c "
+import socket, sys
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+try:
+    sock.connect('$SOCKET')
+except (ConnectionRefusedError, FileNotFoundError):
+    sys.exit(0)
+
+sock.sendall(sys.stdin.buffer.read())
+sock.shutdown(socket.SHUT_WR)
+sock.close()
+" <<< "$ENRICHED" 2>/dev/null
+fi
+
 exit 0

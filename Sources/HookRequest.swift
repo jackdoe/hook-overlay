@@ -1,6 +1,12 @@
 import Foundation
 import AppKit
 
+enum HookEventType: String {
+    case permissionRequest = "PermissionRequest"
+    case notification = "Notification"
+    case stop = "Stop"
+}
+
 struct HookRequest {
     let sessionId: String
     let toolName: String
@@ -8,6 +14,8 @@ struct HookRequest {
     let cwd: String
     let permissionSuggestions: [[String: Any]]?
     let clientFD: Int32
+    let eventType: HookEventType
+    let message: String?
 
     var summary: String {
         if let cmd = toolInput["command"] as? String { return cmd }

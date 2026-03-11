@@ -9,6 +9,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let overlay = OverlayPanel(contentRect: .zero, styleMask: [], backing: .buffered, defer: true)
     private var queue: [HookRequest] = []
     private var hotKeyRefs: [EventHotKeyRef?] = []
+    private var toasts: [ToastPanel] = []
     private static weak var instance: AppDelegate?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -96,7 +97,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startServer() {
-        server.onRequest = { [weak self] in self?.enqueue($0) }
+        server.onRequest = { [weak self] request in
+            switch request.eventType {
+            case .permissionRequest:
+                self?.enqueue(request)
+            case .notification, .stop:
+                self?.showToast(for: request)
+            }
+        }
         do {
             try server.start()
         } catch {
@@ -144,6 +152,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             overlay.dismiss()
         } else {
             overlay.dismiss { [weak self] in self?.showCurrentRequest() }
+        }
+    }
+
+    private func showToast(for request: HookRequest) {
+        if request.eventType == .stop {
+            NSSound(named: NSSound.Name("Glass"))?.play()
+        } else {
+            NSSound(named: NSSound.Name("Pop"))?.play()
+        }
+
+        let toast = ToastPanel()
+        toast.update(request: request)
+        toasts.append(toast)
+        repositionToasts()
+        toast.show()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+            toast.dismiss {
+                self?.toasts.removeAll { $0 === toast }
+                self?.repositionToasts()
+            }
+        }
+    }
+
+    private func repositionToasts() {
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        var y = screen.maxY - 20
+
+        if overlay.isVisible {
+            y = overlay.frame.minY - 8
+        }
+
+        for toast in toasts {
+            let size = toast.frame.size
+            y -= size.height
+            toast.setFrameOrigin(NSPoint(x: screen.maxX - size.width - 20, y: y))
+            y -= 8
         }
     }
 }

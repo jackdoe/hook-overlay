@@ -108,6 +108,15 @@ class SocketServer {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { close(fd); return }
 
+        let eventType = HookEventType(rawValue: json["hook_event_type"] as? String ?? "PermissionRequest")
+            ?? .permissionRequest
+
+        if eventType != .permissionRequest {
+            close(fd)
+        }
+
+        let message = json["message"] as? String
+            ?? json["reason"] as? String
 
         let request = HookRequest(
             sessionId: json["session_id"] as? String ?? "unknown",
@@ -115,7 +124,9 @@ class SocketServer {
             toolInput: json["tool_input"] as? [String: Any] ?? [:],
             cwd: json["cwd"] as? String ?? "unknown",
             permissionSuggestions: json["permission_suggestions"] as? [[String: Any]],
-            clientFD: fd
+            clientFD: fd,
+            eventType: eventType,
+            message: message
         )
 
         DispatchQueue.main.async { [weak self] in self?.onRequest?(request) }

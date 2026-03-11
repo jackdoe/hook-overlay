@@ -48,35 +48,49 @@ python3 -c "
 import json, sys
 
 settings_path = '$CLAUDE_SETTINGS'
-hook_command = '$HOOK_SCRIPT'
+hook_script = '$HOOK_SCRIPT'
 
 with open(settings_path) as f:
     settings = json.load(f)
 
-# Ensure hooks.PermissionRequest exists
 hooks = settings.setdefault('hooks', {})
-perm_hooks = hooks.setdefault('PermissionRequest', [])
 
-# Check if our hook is already there
-already_installed = False
-for group in perm_hooks:
-    for h in group.get('hooks', []):
-        if h.get('command', '') == hook_command:
-            already_installed = True
-            break
+event_configs = {
+    'PermissionRequest': hook_script,
+    'Notification': hook_script + ' Notification',
+    'Stop': hook_script + ' Stop',
+}
 
-if not already_installed:
-    perm_hooks.append({
-        'hooks': [{
-            'type': 'command',
-            'command': hook_command
-        }]
-    })
+changed = False
+for event_name, command in event_configs.items():
+    event_hooks = hooks.setdefault(event_name, [])
+
+    already_installed = False
+    for group in event_hooks:
+        for h in group.get('hooks', []):
+            if h.get('command', '') == command:
+                already_installed = True
+                break
+
+    if not already_installed:
+        entry = {
+            'hooks': [{
+                'type': 'command',
+                'command': command
+            }]
+        }
+        if event_name != 'PermissionRequest':
+            entry['matcher'] = ''
+        event_hooks.append(entry)
+        changed = True
+        print('    ✓', event_name, 'hook added')
+    else:
+        print('    ✓', event_name, 'hook already installed')
+
+if changed:
     with open(settings_path, 'w') as f:
         json.dump(settings, f, indent=2)
-    print('    ✓ Hook added to', settings_path)
-else:
-    print('    ✓ Hook already in', settings_path)
+    print('    Saved', settings_path)
 "
 
 echo ""
@@ -86,6 +100,7 @@ echo "The overlay app will:"
 echo "  • Start automatically at login"
 echo "  • Show a floating panel when any Claude Code session needs permission"
 echo "  • Respond to ⌃1 (Allow), ⌃2 (Deny), ⌃3 (Always Allow) globally"
+echo "  • Show toast notifications for Notification and Stop events"
 echo ""
 echo "Make sure to grant Accessibility permission:"
 echo "  System Settings → Privacy & Security → Accessibility → HookOverlay"
